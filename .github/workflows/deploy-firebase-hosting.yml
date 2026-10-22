@@ -1,0 +1,64 @@
+# Reusable. An app repo that is a static site on Firebase Hosting calls it like this:
+#
+#   jobs:
+#     deploy:
+#       uses: meros/deploy-workflows/.github/workflows/deploy-firebase-hosting.yml@main
+#       with:
+#         project: metrunome-app-97216
+#         service_account: deploy-metrunome@metrunome-app-97216.iam.gserviceaccount.com
+#       permissions: { contents: read, id-token: write }
+#
+# The deploy service account lives in the Firebase project and trusts the calling repo's main
+# branch through the Workload Identity pool in meros-apps. See meros/hosting, scripts/grant-firebase-deploy.sh.
+name: Deploy to Firebase Hosting
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: Firebase project id
+        required: true
+        type: string
+      service_account:
+        description: Deploy service account email, in the Firebase project
+        required: true
+        type: string
+      install:
+        description: Install command
+        type: string
+        default: npm ci
+      build:
+        description: Build command that writes the folder named in firebase.json
+        type: string
+        default: npm run build
+      only:
+        description: Value for firebase deploy --only
+        type: string
+        default: hosting
+      node_version:
+        type: string
+        default: '22'
+      firebase_tools:
+        description: Pinned firebase-tools version
+        type: string
+        default: '15.31.0'
+
+env:
+  WIF_PROVIDER: projects/37689603335/locations/global/workloadIdentityPools/github/providers/github
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+      - run: ${{ inputs.install }}
+      - run: ${{ inputs.build }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ inputs.service_account }}
+      - name: Deploy
+        run: npx --yes "firebase-tools@${{ inputs.firebase_tools }}" deploy --only "${{ inputs.only }}" --project "${{ inputs.project }}"
