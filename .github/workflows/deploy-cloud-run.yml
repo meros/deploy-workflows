@@ -27,7 +27,7 @@ on:
         type: string
         default: Dockerfile
       nix_attr:
-        description: Flake attribute that streams an image (for example .#container). Set it to build with Nix instead of a Dockerfile.
+        description: Flake attribute that builds an image (streamLayeredImage or buildLayeredImage, for example .#container). Set it to build with Nix instead of a Dockerfile.
         type: string
         default: ''
       nix_image:
@@ -61,7 +61,12 @@ jobs:
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/apps/${{ inputs.app }}:${GITHUB_SHA}"
           if [ -n "${{ inputs.nix_attr }}" ]; then
-            "$(nix build "${{ inputs.nix_attr }}" --no-link --print-out-paths)" | docker load
+            out="$(nix build "${{ inputs.nix_attr }}" --no-link --print-out-paths)"
+            if [ "$(head -c 2 "$out")" = '#!' ]; then
+              "$out" | docker load   # streamLayeredImage: a script that writes the image
+            else
+              docker load < "$out"   # buildLayeredImage: the image archive itself
+            fi
             docker tag "${{ inputs.nix_image }}" "$IMAGE"
           else
             docker build -f "${{ inputs.dockerfile }}" -t "$IMAGE" "${{ inputs.context }}"
