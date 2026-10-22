@@ -1,0 +1,61 @@
+# Reusable. An app repo calls it like this:
+#
+#   jobs:
+#     deploy:
+#       uses: meros/deploy-workflows/.github/workflows/deploy-cloud-run.yml@main
+#       with:
+#         app: glosorna
+#       permissions: { contents: read, id-token: write }
+#
+# The app must be listed in meros/hosting infra/variables.tf (private), which creates its service, its deploy
+# account and the trust between that account and the calling repo.
+name: Deploy to Cloud Run
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: App key in meros/hosting infra/variables.tf (private) (also the Cloud Run service name)
+        required: true
+        type: string
+      context:
+        description: Docker build context
+        type: string
+        default: .
+      dockerfile:
+        description: Dockerfile path
+        type: string
+        default: Dockerfile
+      port:
+        description: Container port
+        type: string
+        default: '8080'
+
+env:
+  PROJECT: meros-apps
+  REGION: europe-north1
+  WIF_PROVIDER: projects/37689603335/locations/global/workloadIdentityPools/github/providers/github
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: deploy-${{ inputs.app }}@meros-apps.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+      - name: Build and push
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/apps/${{ inputs.app }}:${GITHUB_SHA}"
+          docker build -f "${{ inputs.dockerfile }}" -t "$IMAGE" "${{ inputs.context }}"
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Deploy
+        run: |
+          gcloud run deploy "${{ inputs.app }}" \
+            --project "$PROJECT" --region "$REGION" \
+            --image "$IMAGE" --port "${{ inputs.port }}" \
+            --update-labels "commit=${GITHUB_SHA::12},repo=${GITHUB_REPOSITORY#*/}"
