@@ -55,7 +55,7 @@ jobs:
           service_account: deploy-${{ inputs.app }}@meros-apps.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v3
       - run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
         if: inputs.nix_attr != ''
       - name: Build and push
         run: |
